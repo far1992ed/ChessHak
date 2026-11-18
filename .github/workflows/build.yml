@@ -4,16 +4,43 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v3
       with:
         java-version: '17'
         distribution: 'temurin'
-    - name: Build with Gradle
-      run: ./gradlew assembleDebug
-    - name: Upload APK
+    - name: Install Android SDK
+      run: |
+        wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+        unzip commandlinetools-linux-9477386_latest.zip -d $HOME/android-sdk
+        mkdir -p $HOME/android-sdk/cmdline-tools/latest
+        mv $HOME/android-sdk/cmdline-tools/bin $HOME/android-sdk/cmdline-tools/lib $HOME/android-sdk/cmdline-tools/NOTICE.txt $HOME/android-sdk/cmdline-tools/source.properties $HOME/android-sdk/cmdline-tools/latest/
+        export ANDROID_HOME=$HOME/android-sdk
+        export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
+        export PATH=$PATH:$ANDROID_HOME/build-tools/33.0.2
+        yes | sdkmanager "platforms;android-33" "build-tools;33.0.2"
+        echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
+        echo "$ANDROID_HOME/build-tools/33.0.2" >> $GITHUB_PATH
+        echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+    - name: Build APK
+      run: |
+        mkdir -p build/src/com/kanha/chesshack build/assets
+        find . -name "AndroidManifest.xml" -exec cp {} build/AndroidManifest.xml \;
+        find . -name "MainActivity.java" -exec cp {} build/src/com/kanha/chesshack/MainActivity.java \;
+        find . -name "hack.js" -exec cp {} build/assets/hack.js \;
+        cd build
+        javac -source 1.8 -target 1.8 -cp $ANDROID_HOME/platforms/android-33/android.jar -d obj src/com/kanha/chesshack/MainActivity.java
+        d8 --lib $ANDROID_HOME/platforms/android-33/android.jar --output . obj/com/kanha/chesshack/*.class
+        aapt package -f -M AndroidManifest.xml -I $ANDROID_HOME/platforms/android-33/android.jar -F app.apk
+        aapt add app.apk classes.dex
+        aapt add app.apk assets/hack.js
+        keytool -genkey -v -keystore my.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -storepass password -keypass password -dname "CN=Android"
+        apksigner sign --ks my.keystore --ks-pass pass:password --key-pass pass:password --out ChessHack.apk app.apk
+        mkdir -p $GITHUB_WORKSPACE/output
+        cp ChessHack.apk $GITHUB_WORKSPACE/output/
+    - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Chess-App
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: output/ChessHack.apk

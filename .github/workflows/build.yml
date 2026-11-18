@@ -25,11 +25,21 @@ jobs:
         echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
     - name: Build APK
       run: |
+        # 1. إنشاء مجلد البناء
         mkdir -p build/src/com/kanha/chesshack build/assets
+        
+        # 2. البحث عن الملفات في أي مكان ونسخها للمكان الصحيح
         find . -name "AndroidManifest.xml" -exec cp {} build/AndroidManifest.xml \;
         find . -name "MainActivity.java" -exec cp {} build/src/com/kanha/chesshack/MainActivity.java \;
         find . -name "hack.js" -exec cp {} build/assets/hack.js \;
+        
         cd build
+        
+        # 3. إصلاح اسم الحزمة (Package) تلقائياً عشان ما يهم شو سميت المجلد (hak أو hack)
+        sed -i 's/package .*/package com.kanha.chesshack;/g' src/com/kanha/chesshack/MainActivity.java
+        sed -i 's/package=".*"/package="com.kanha.chesshack"/g' AndroidManifest.xml
+        
+        # 4. البناء والتوقيع
         javac -source 1.8 -target 1.8 -cp $ANDROID_HOME/platforms/android-33/android.jar -d obj src/com/kanha/chesshack/MainActivity.java
         d8 --lib $ANDROID_HOME/platforms/android-33/android.jar --output . obj/com/kanha/chesshack/*.class
         aapt package -f -M AndroidManifest.xml -I $ANDROID_HOME/platforms/android-33/android.jar -F app.apk
@@ -37,6 +47,7 @@ jobs:
         aapt add app.apk assets/hack.js
         keytool -genkey -v -keystore my.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -storepass password -keypass password -dname "CN=Android"
         apksigner sign --ks my.keystore --ks-pass pass:password --key-pass pass:password --out ChessHack.apk app.apk
+        
         mkdir -p $GITHUB_WORKSPACE/output
         cp ChessHack.apk $GITHUB_WORKSPACE/output/
     - name: Upload APK Artifact

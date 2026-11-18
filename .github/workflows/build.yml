@@ -27,7 +27,6 @@ jobs:
       run: |
         mkdir -p build/src/com/kanha/chesshack build/assets
         
-        # البحث عن ملفاتك أينما كانت ونسخها لمكان البناء
         MANIFEST=$(find . -name "AndroidManifest.xml" | head -n 1)
         JAVA_FILE=$(find . -name "MainActivity.java" | head -n 1)
         JS_FILE=$(find . -name "*.js" | head -n 1)
@@ -38,18 +37,26 @@ jobs:
         
         cd build
         
-        # تصحيح أسماء الحزم تلقائياً
+        # إصلاح أسماء الحزم تلقائياً
         sed -i 's/package .*/package com.kanha.chesshack;/g' src/com/kanha/chesshack/MainActivity.java
         sed -i 's/package=".*"/package="com.kanha.chesshack"/g' AndroidManifest.xml
         
-        # البناء والتوقيع
+        # إضافة إصدارات الأندرويد (minSdk و targetSdk) عشان يتوافق مع كل الجوالات
+        if ! grep -q "uses-sdk" AndroidManifest.xml; then
+          sed -i 's|<application|<uses-sdk android:minSdkVersion="21" android:targetSdkVersion="33" />\n    <application|' AndroidManifest.xml
+        fi
+        
+        # البناء
         javac -source 1.8 -target 1.8 -cp $ANDROID_HOME/platforms/android-33/android.jar -d obj src/com/kanha/chesshack/MainActivity.java
         d8 --lib $ANDROID_HOME/platforms/android-33/android.jar --output . obj/com/kanha/chesshack/*.class
         aapt package -f -M AndroidManifest.xml -I $ANDROID_HOME/platforms/android-33/android.jar -F app.apk
         aapt add app.apk classes.dex
         aapt add app.apk assets/hack.js
+        
+        # محاذاة الملف (zipalign) وتوقيعه بكل الإصدارات (v1, v2, v3)
+        zipalign -v 4 app.apk app-aligned.apk
         keytool -genkey -v -keystore my.keystore -alias mykey -keyalg RSA -keysize 2048 -validity 10000 -storepass password -keypass password -dname "CN=Android"
-        apksigner sign --ks my.keystore --ks-pass pass:password --key-pass pass:password --out ChessHack.apk app.apk
+        apksigner sign --ks my.keystore --ks-pass pass:password --key-pass pass:password --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out ChessHack.apk app-aligned.apk
         
         mkdir -p $GITHUB_WORKSPACE/output
         cp ChessHack.apk $GITHUB_WORKSPACE/output/

@@ -1,0 +1,16 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.kanha.chesshack'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.kanha.chesshack"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+}

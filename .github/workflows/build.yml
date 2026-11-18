@@ -4,9 +4,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
     - name: Set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -23,23 +22,88 @@ jobs:
         echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> $GITHUB_PATH
         echo "$ANDROID_HOME/build-tools/33.0.2" >> $GITHUB_PATH
         echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-    - name: Build APK
+    - name: Create Files and Build APK
       run: |
-        # 1. إنشاء مجلد البناء
         mkdir -p build/src/com/kanha/chesshack build/assets
         
-        # 2. البحث عن الملفات في أي مكان ونسخها للمكان الصحيح
-        find . -name "AndroidManifest.xml" -exec cp {} build/AndroidManifest.xml \;
-        find . -name "MainActivity.java" -exec cp {} build/src/com/kanha/chesshack/MainActivity.java \;
-        find . -name "hack.js" -exec cp {} build/assets/hack.js \;
-        
+        cat > build/AndroidManifest.xml << 'EOF'
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.kanha.chesshack">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <application android:allowBackup="true" android:label="Chess Pro" android:theme="@android:style/Theme.DeviceDefault.NoActionBar" android:usesCleartextTraffic="true">
+                <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|screenSize|keyboardHidden">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+
+        cat > build/src/com/kanha/chesshack/MainActivity.java << 'EOF'
+        package com.kanha.chesshack;
+        import android.app.Activity;
+        import android.os.Bundle;
+        import android.webkit.WebView;
+        import android.webkit.WebViewClient;
+        import android.webkit.WebSettings;
+        import android.webkit.WebChromeClient;
+        import java.io.InputStream;
+        import java.io.BufferedReader;
+        import java.io.InputStreamReader;
+
+        public class MainActivity extends Activity {
+            private WebView webView;
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                webView = new WebView(this);
+                WebSettings settings = webView.getSettings();
+                settings.setJavaScriptEnabled(true);
+                settings.setDomStorageEnabled(true);
+                settings.setDatabaseEnabled(true);
+                settings.setAllowFileAccess(true);
+                settings.setAllowContentAccess(true);
+                settings.setAllowFileAccessFromFileURLs(true);
+                settings.setAllowUniversalAccessFromFileURLs(true);
+                settings.setJavaScriptCanOpenWindowsAutomatically(true);
+                settings.setMediaPlaybackRequiresUserGesture(false);
+                webView.setWebChromeClient(new WebChromeClient());
+                webView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        super.onPageFinished(view, url);
+                        if (url.contains("chess.com")) {
+                            injectScript(view);
+                        }
+                    }
+                });
+                webView.loadUrl("https://www.chess.com/play/online");
+                setContentView(webView);
+            }
+            private void injectScript(WebView view) {
+                try {
+                    InputStream is = getAssets().open("hack.js");
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(is));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line).append("\n");
+                    }
+                    reader.close();
+                    view.evaluateJavascript(sb.toString(), null);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        EOF
+
+        # إنشاء ملف هاك مؤقت (مكانه الفعلي في الأسفل)
+        echo "console.log('Chess Hack Loaded');" > build/assets/hack.js
+
         cd build
-        
-        # 3. إصلاح اسم الحزمة (Package) تلقائياً عشان ما يهم شو سميت المجلد (hak أو hack)
-        sed -i 's/package .*/package com.kanha.chesshack;/g' src/com/kanha/chesshack/MainActivity.java
-        sed -i 's/package=".*"/package="com.kanha.chesshack"/g' AndroidManifest.xml
-        
-        # 4. البناء والتوقيع
         javac -source 1.8 -target 1.8 -cp $ANDROID_HOME/platforms/android-33/android.jar -d obj src/com/kanha/chesshack/MainActivity.java
         d8 --lib $ANDROID_HOME/platforms/android-33/android.jar --output . obj/com/kanha/chesshack/*.class
         aapt package -f -M AndroidManifest.xml -I $ANDROID_HOME/platforms/android-33/android.jar -F app.apk
